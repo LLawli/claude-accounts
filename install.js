@@ -11,10 +11,40 @@ const CORE_FILES = [
   'src/paths.js', 'src/fsutil.js', 'src/vault.js', 'src/switch.js',
   'src/login.js', 'src/claude-path.js', 'src/menu.js', 'src/cli.js',
 ];
+const WRAPPER_FILES = [
+  'wrappers/claude.cmd', 'wrappers/claude.ps1.tmpl', 'wrappers/claude.sh.tmpl',
+];
 const START = '# >>> claude-accounts >>>';
 const END = '# <<< claude-accounts <<<';
 const HOME = os.homedir();
 const CORE_DIR = path.join(HOME, '.claude-accounts');
+
+// --- pretty output (Claude-ish terracotta accent) ---
+const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
+const C = {
+  accent: (s) => (useColor ? `\x1b[38;2;215;119;87m${s}\x1b[0m` : s),
+  bold: (s) => (useColor ? `\x1b[1m${s}\x1b[0m` : s),
+  dim: (s) => (useColor ? `\x1b[2m${s}\x1b[0m` : s),
+  green: (s) => (useColor ? `\x1b[32m${s}\x1b[0m` : s),
+};
+function logo() {
+  console.log(`\n  ${C.accent(C.bold('claude-accounts'))} ${C.dim('installer')}\n`);
+}
+function step(msg) { console.log(`  ${C.accent('•')} ${msg}`); }
+function done(msg) { console.log(`  ${C.green('✓')} ${msg}`); }
+function progress(cur, total, label) {
+  const w = 24;
+  const ratio = total ? cur / total : 0;
+  const filled = Math.round(ratio * w);
+  const barStr = C.accent('█'.repeat(filled)) + C.dim('░'.repeat(w - filled));
+  const pct = String(Math.round(ratio * 100)).padStart(3);
+  if (process.stdout.isTTY) {
+    process.stdout.write(`\r  ${barStr} ${pct}%  ${C.dim(label)}\x1b[K`);
+    if (cur >= total) process.stdout.write('\n');
+  } else if (cur >= total) {
+    console.log(`  fetched ${total} files`);
+  }
+}
 
 function upsertBlock(content, block, start, end) {
   const wrapped = `${start}\n${block}\n${end}`;
@@ -50,12 +80,17 @@ function httpGet(url) {
   });
 }
 
-async function fetchCore() {
-  for (const rel of CORE_FILES) {
+async function fetchAll() {
+  const files = [...CORE_FILES, ...WRAPPER_FILES];
+  progress(0, files.length, 'iniciando...');
+  let i = 0;
+  for (const rel of files) {
     const body = await httpGet(`${RAW}/${rel}`);
     const dest = path.join(CORE_DIR, rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, body);
+    i += 1;
+    progress(i, files.length, rel);
   }
 }
 
@@ -113,26 +148,23 @@ function installWindows(real) {
 async function main() {
   const maj = Number(process.version.match(/^v(\d+)/)[1]);
   if (maj < 18) { console.error('Node >= 18 required'); process.exit(1); }
-  console.log('[claude-accounts] fetching core...');
-  await fetchCore();
-  // wrappers dir alongside core
-  fs.mkdirSync(path.join(CORE_DIR, 'wrappers'), { recursive: true });
-  for (const w of ['claude.cmd', 'claude.ps1.tmpl', 'claude.sh.tmpl']) {
-    const body = await httpGet(`${RAW}/wrappers/${w}`);
-    fs.writeFileSync(path.join(CORE_DIR, 'wrappers', w), body);
-  }
+  logo();
+  step('baixando core...');
+  await fetchAll();
   const real = resolveRealClaude();
-  console.log(`[claude-accounts] real claude: ${real}`);
+  done(`claude encontrado: ${C.dim(real)}`);
+  step('instalando wrappers de shell...');
   if (process.platform === 'win32') {
     installWindows(real);
   } else {
     installUnix(real);
   }
-  console.log('[claude-accounts] done. Open a new shell and run: claude --accounts');
+  done('wrappers instalados');
+  console.log(`\n  ${C.green('✓')} ${C.bold('pronto!')} abra um shell novo e rode ${C.accent('claude --accounts')}\n`);
 }
 
 if (require.main === module) {
-  main().catch((e) => { console.error(`[claude-accounts] ${e.message}`); process.exit(1); });
+  main().catch((e) => { console.error(`\n  ${C.accent('✗')} ${e.message}\n`); process.exit(1); });
 }
 
 module.exports = { upsertBlock, backupThenWrite, resolveRealClaude };
