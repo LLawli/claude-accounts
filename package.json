@@ -1,0 +1,9 @@
+{
+  "name": "claude-accounts",
+  "version": "0.1.0",
+  "description": "Switch logged-in Claude Code accounts in place, no re-login.",
+  "license": "MIT",
+  "type": "commonjs",
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=18" }
+}
