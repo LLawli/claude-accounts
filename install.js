@@ -8,8 +8,8 @@ const cp = require('node:child_process');
 
 const RAW = 'https://raw.githubusercontent.com/SrDarf/claude-accounts/main';
 const CORE_FILES = [
-  'src/paths.js', 'src/fsutil.js', 'src/i18n.js', 'src/vault.js', 'src/switch.js',
-  'src/login.js', 'src/claude-path.js', 'src/menu.js', 'src/cli.js',
+  'src/paths.js', 'src/fsutil.js', 'src/lock.js', 'src/i18n.js', 'src/vault.js',
+  'src/switch.js', 'src/login.js', 'src/claude-path.js', 'src/menu.js', 'src/cli.js',
 ];
 const WRAPPER_FILES = [
   'wrappers/claude.cmd', 'wrappers/claude.ps1.tmpl', 'wrappers/claude.sh.tmpl',
@@ -244,13 +244,18 @@ function installWindows(real) {
   fs.mkdirSync(binDir, { recursive: true });
   const cmd = fs.readFileSync(path.join(CORE_DIR, 'wrappers', 'claude.cmd'), 'utf8');
   fs.writeFileSync(path.join(binDir, 'claude.cmd'), cmd);
+  const psEsc = (s) => String(s).replace(/'/g, "''"); // literal ' inside a PS single-quoted string
   try {
     const cur = cp.execSync('powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\'Path\',\'User\')"', { encoding: 'utf8' }).trim();
     if (!cur.split(';').includes(binDir)) {
-      cp.execSync(`powershell -NoProfile -Command "[Environment]::SetEnvironmentVariable('Path','${binDir};${cur}','User')"`);
+      cp.execSync(`powershell -NoProfile -Command "[Environment]::SetEnvironmentVariable('Path','${psEsc(binDir)};${psEsc(cur)}','User')"`);
     }
+    // Persist the resolved real-claude path so the cmd shim finds it in fresh
+    // shells. The shim reads %CLAUDE_ACCOUNTS_REAL% and otherwise falls back to a
+    // hardcoded path that usually does not exist, breaking every cmd invocation.
+    cp.execSync(`powershell -NoProfile -Command "[Environment]::SetEnvironmentVariable('CLAUDE_ACCOUNTS_REAL','${psEsc(real)}','User')"`);
   } catch (e) { console.error(`[claude-accounts] PATH update skipped: ${e.message}`); }
-  // record real path for the cmd shim
+  // record real path for the cmd shim in the current process too
   process.env.CLAUDE_ACCOUNTS_REAL = real;
 }
 

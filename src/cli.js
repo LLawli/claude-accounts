@@ -28,9 +28,7 @@ async function main(argv) {
     }
     case 'remove': {
       if (!rest[0]) { console.error(t('usageRemove')); return 2; }
-      const fs = require('node:fs');
-      const p = require('./paths.js');
-      fs.rmSync(p.slotDir(rest[0]), { recursive: true, force: true });
+      vault.removeAccount(rest[0]);
       console.log(t('removed', rest[0]));
       return 0;
     }
@@ -80,9 +78,7 @@ async function runInteractiveMenu() {
   if (choice === '__remove__') {
     const sub = await runMenu(vault.list(), vault.getCurrent(), emailMap());
     if (sub && sub !== '__add__' && sub !== '__remove__') {
-      const fs = require('node:fs');
-      const p = require('./paths.js');
-      fs.rmSync(p.slotDir(sub), { recursive: true, force: true });
+      vault.removeAccount(sub);
       console.log(t('removed', sub));
     }
     return 0;

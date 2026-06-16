@@ -21,6 +21,7 @@ const STRINGS = {
     usageSwitch: 'usage: switch <name>',
     usageRemove: 'usage: remove <name>',
     unknown: (c) => `unknown subcommand: ${c}`,
+    unknownVault: (n) => `unknown account in vault: '${n}'`,
     invalidName: (n) => `invalid name: '${n}'`,
     exists: (n) => `account '${n}' already exists`,
   },
@@ -41,6 +42,7 @@ const STRINGS = {
     usageSwitch: 'uso: switch <nome>',
     usageRemove: 'uso: remove <nome>',
     unknown: (c) => `subcomando desconhecido: ${c}`,
+    unknownVault: (n) => `conta desconhecida no cofre: '${n}'`,
     invalidName: (n) => `nome invalido: '${n}'`,
     exists: (n) => `conta '${n}' ja existe`,
   },
@@ -65,15 +67,27 @@ function detectLocale() {
   }
 }
 
+// The on-disk language never changes within a single CLI process, so read and
+// parse config.json at most once instead of on every t() lookup (the menu render
+// calls t() many times). The env var is still checked first and uncached, so it
+// stays live.
+let _cfgLang;
+let _cfgRead = false;
+function configLang() {
+  if (_cfgRead) return _cfgLang;
+  _cfgRead = true;
+  try {
+    _cfgLang = norm(JSON.parse(fs.readFileSync(p.configPath(), 'utf8')).lang);
+  } catch {
+    _cfgLang = null; // no config -> default
+  }
+  return _cfgLang;
+}
+
 function lang() {
   const fromEnv = norm(process.env.CLAUDE_ACCOUNTS_LANG);
   if (fromEnv) return fromEnv;
-  try {
-    const c = JSON.parse(fs.readFileSync(p.configPath(), 'utf8'));
-    const n = norm(c.lang);
-    if (n) return n;
-  } catch { /* no config -> default */ }
-  return 'en';
+  return configLang() || 'en';
 }
 
 function t(key, ...args) {
