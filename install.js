@@ -89,25 +89,62 @@ function detectLang() {
   try { return normLang(Intl.DateTimeFormat().resolvedOptions().locale) || 'en'; } catch { return 'en'; }
 }
 
-function promptLang() {
+// Arrow-key selector matching the account menu style (accent pointer, ↑/↓/enter).
+// Self-contained: the installer runs before the runtime core is fetched.
+function selectTTY(title, items) {
   return new Promise((resolve) => {
-    const rl = require('node:readline').createInterface({ input: process.stdin, output: process.stdout });
-    console.log(`  ${C.bold('Escolha o idioma / Choose language')}`);
-    console.log(`    ${C.accent('1')}) Português (BR)`);
-    console.log(`    ${C.accent('2')}) English`);
-    rl.question(`  [1]: `, (ans) => {
-      rl.close();
-      const a = (ans || '').trim().toLowerCase();
-      console.log('');
-      resolve(a === '2' || a.startsWith('en') ? 'en' : 'pt');
-    });
+    let idx = 0;
+    let height = 0;
+    const stdin = process.stdin;
+    const out = process.stdout;
+
+    const render = () => {
+      const lines = ['', `  ${C.accent(C.bold(title))}`, ''];
+      items.forEach((it, i) => {
+        const sel = i === idx;
+        const ptr = sel ? C.accent('❯') : ' ';
+        const label = sel ? C.accent(C.bold(it.label)) : it.label;
+        lines.push(`  ${ptr} ${label}`);
+      });
+      lines.push('');
+      lines.push(`  ${C.dim('↑/↓ · enter · esc')}`);
+      if (height > 0) out.write(`\x1b[${height}A`);
+      out.write(lines.map((l) => `\r\x1b[2K${l}`).join('\n'));
+      height = lines.length - 1;
+    };
+
+    const cleanup = () => {
+      out.write(`\x1b[${height + 1}B\r\x1b[?25h\n`);
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.removeListener('data', onData);
+    };
+
+    const onData = (buf) => {
+      const s = buf.toString();
+      if (s === '\x1b[A' || s === 'k') { idx = (idx - 1 + items.length) % items.length; render(); }
+      else if (s === '\x1b[B' || s === 'j') { idx = (idx + 1) % items.length; render(); }
+      else if (s === '\r' || s === '\n') { cleanup(); resolve(items[idx].value); }
+      else if (s === '\x1b' || s === '\x03') { cleanup(); resolve(items[0].value); }
+    };
+
+    out.write('\x1b[?25l');
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.on('data', onData);
+    render();
   });
 }
 
 async function chooseLang() {
   const explicit = argLang() || normLang(process.env.CLAUDE_ACCOUNTS_LANG);
   if (explicit) return explicit;
-  if (process.stdin.isTTY) return promptLang();
+  if (process.stdin.isTTY) {
+    return selectTTY('Escolha o idioma / Choose language', [
+      { label: 'Português (BR)', value: 'pt' },
+      { label: 'English', value: 'en' },
+    ]);
+  }
   return detectLang();
 }
 
