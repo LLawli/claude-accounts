@@ -1,30 +1,92 @@
 # claude-accounts
 
-Switch the logged-in Claude Code account in a single `~/.claude` — no browser re-login.
+**Switch between multiple Claude Code logins in one `~/.claude` — no browser re-login, no juggling config folders.**
+
+`claude --accounts` opens an arrow-key selector, swaps the active login in place, and launches Claude. Personal, work, client — one keypress apart.
+
+```
+  Claude Accounts
+
+  ❯ personal      personal@example.com   ● ativa
+    work          work@example.com
+    client-acme   acme@example.com
+
+    + adicionar conta
+    - remover conta
+
+  ↑/↓ navegar · enter trocar · esc sair
+```
+
+---
+
+## The problem
+
+Claude Code binds **one logged-in account per config directory**. The identity lives in two files inside `~/.claude`:
+
+- `~/.claude/.credentials.json` — the OAuth tokens
+- `~/.claude.json` → `oauthAccount` — the account identity (email, org, uuid)
+
+To use a second account today, you either **log out and re-authenticate through the browser every time**, or you keep **parallel config folders** and flip `CLAUDE_CONFIG_DIR` between them — which forks your history, settings, hooks, skills, and projects across folders that drift apart.
+
+## The solution
+
+`claude-accounts` keeps **a single `~/.claude`** and swaps only the login.
+
+Each account's two identity files are stashed in a vault at `~/.claude/.accounts/<name>/`. Switching:
+
+1. **Saves** the current live login back into its slot (preserving freshly refreshed tokens).
+2. **Loads** the target account's tokens into `~/.claude/.credentials.json`.
+3. **Injects** the target `oauthAccount` into `~/.claude.json`, leaving every other key untouched.
+
+Everything else — settings, hooks, skills, projects, history — stays in one place and is shared across all accounts. No re-login. No folder drift.
+
+---
 
 ## Install
+
 ```
 curl -fsSL https://raw.githubusercontent.com/SrDarf/claude-accounts/main/install.js | node
 ```
-Open a new shell, then:
+
+The installer fetches a dependency-free Node core into `~/.claude-accounts`, resolves your real `claude` binary, and wires a thin `claude` wrapper into your shell (PowerShell, cmd, bash, zsh). Existing config is backed up (`.bak-<timestamp>`) and edited inside marked blocks — re-running is safe and idempotent.
+
+Open a new shell afterward.
+
+## Usage
+
 ```
-claude --accounts        # arrow-key selector
-claude --account work    # switch directly, then launches Claude
+claude --accounts          # open the selector, switch, then launch Claude
+claude --account work      # switch straight to "work", then launch
+claude ...                 # anything else passes through to the real Claude untouched
 ```
+
+Extra arguments are forwarded: `claude --account work --resume` switches then resumes.
+
+> Close any running Claude session before switching — Claude reads the credential files at startup.
 
 ## Adding an account
-Choose `[+] adicionar conta` in the selector. A guided browser login runs in a temporary
-config dir; the resulting credentials are stored in the vault. No tokens are typed by hand.
 
-## How it works
-Each account's `.credentials.json` + `oauthAccount` are stored under
-`~/.claude/.accounts/<name>/`. Switching saves the current login back to its slot (keeping
-refreshed tokens), then loads the target into `~/.claude/.credentials.json` and
-`~/.claude.json`. Always close Claude before switching.
+Pick **`+ adicionar conta`** in the selector. A guided browser login runs in a throwaway
+config dir; the captured credentials are filed into the vault under the name you choose.
+No tokens are ever typed or pasted by hand.
+
+Remove one with **`- remover conta`**.
+
+## How switching stays safe
+
+- **Save-before-load:** the live login is written back to its slot *before* the target is loaded, so tokens that Claude refreshed during your session are never lost.
+- **Surgical `.claude.json` edit:** only the `oauthAccount` key is replaced; your projects, onboarding state, and the other ~40 keys are preserved.
+- **Atomic writes + backups:** credential files are written atomically; shell configs are backed up before any edit.
 
 ## Security
-Tokens are stored in plaintext under `~/.claude/.accounts` — the same exposure level as
-Claude Code's own `~/.claude/.credentials.json`. No new attack surface.
+
+Tokens are stored in plaintext under `~/.claude/.accounts` — **the same exposure level as Claude Code's own `~/.claude/.credentials.json`**. The vault doesn't move tokens off your machine or add any new attack surface; it just relocates copies of files that already sit in plaintext in your home directory. On Unix the vault is `chmod 700` and slot files `600`.
+
+## Requirements
+
+- Node.js ≥ 18
+- Claude Code already installed and on your `PATH`
 
 ## License
+
 MIT
