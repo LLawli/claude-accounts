@@ -48,6 +48,8 @@ Everything else — settings, hooks, skills, projects, history — stays in one 
 curl -fsSL https://raw.githubusercontent.com/SrDarf/claude-accounts/main/install.js | node
 ```
 
+![installer](docs/img/install.png)
+
 The installer fetches a dependency-free Node core into `~/.claude-accounts`, resolves your real `claude` binary, and wires a thin `claude` wrapper into your shell (PowerShell, cmd, bash, zsh). Existing config is backed up (`.bak-<timestamp>`) and edited inside marked blocks — re-running is safe and idempotent.
 
 Open a new shell afterward.
