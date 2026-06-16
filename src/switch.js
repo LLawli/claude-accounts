@@ -17,7 +17,7 @@ function switchAccount(target) {
     if (fs.existsSync(p.liveCreds())) {
       vault.writeSlot(current, {
         credentialsText: fs.readFileSync(p.liveCreds(), 'utf8'),
-        oauthAccount: vault.captureOAuthFromLive() || {},
+        oauthAccount: vault.captureOAuthFromLive() || (vault.readSlot(current).oauthAccount) || {},
       });
     }
   }

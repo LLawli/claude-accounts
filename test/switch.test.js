@@ -62,3 +62,18 @@ test('switch to unknown account throws', () => {
   vault.writeSlot('work', { credentialsText: '{}', oauthAccount: {} });
   assert.throws(() => require('../src/switch.js').switchAccount('ghost'), /ghost/);
 });
+
+test('switch preserves current slot oauth when live has none', () => {
+  const h = setup();
+  const vault = require('../src/vault.js');
+  vault.writeSlot('work', { credentialsText: '{"tok":"W"}', oauthAccount: { emailAddress: 'w@x.com' } });
+  vault.writeSlot('home', { credentialsText: '{"tok":"H"}', oauthAccount: { emailAddress: 'h@x.com' } });
+  // live = work creds but .claude.json has NO oauthAccount
+  fs.writeFileSync(path.join(h, '.claude', '.credentials.json'), '{"tok":"W"}');
+  fs.writeFileSync(path.join(h, '.claude.json'), JSON.stringify({ other: 1 }));
+  vault.setCurrent('work');
+
+  require('../src/switch.js').switchAccount('home');
+  // work slot must keep its original oauth, not be clobbered to {}
+  assert.strictEqual(vault.readSlot('work').oauthAccount.emailAddress, 'w@x.com');
+});
