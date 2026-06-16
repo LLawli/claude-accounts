@@ -1,3 +1,6 @@
 node_modules/
 *.log
 .DS_Store
+# distrobox test-container home that lives inside the repo dir
+home/
+*.bak-*
