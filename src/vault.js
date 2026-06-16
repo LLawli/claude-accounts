@@ -41,6 +41,32 @@ function email(name) {
   return (o && o.emailAddress) || '';
 }
 
+function deriveName(oauthAccount) {
+  const e = (oauthAccount && oauthAccount.emailAddress) || '';
+  const local = String(e).split('@')[0].replace(/[^A-Za-z0-9._-]/g, '');
+  return local || 'default';
+}
+
+// First-run safety: register the already logged-in account as the initial slot
+// so the live login is never overwritten before being saved. Idempotent: does
+// nothing once a current account exists. Returns the adopted name or null.
+function adoptCurrent() {
+  if (getCurrent()) return null;
+  if (!fs.existsSync(p.liveCreds())) return null;
+  const credentialsText = fs.readFileSync(p.liveCreds(), 'utf8');
+  const oauthAccount = captureOAuthFromLive() || {};
+  let name = deriveName(oauthAccount);
+  const existing = list();
+  if (existing.includes(name)) {
+    let i = 2;
+    while (existing.includes(`${name}-${i}`)) i += 1;
+    name = `${name}-${i}`;
+  }
+  writeSlot(name, { credentialsText, oauthAccount });
+  setCurrent(name);
+  return name;
+}
+
 function captureOAuthFromLive() {
   const j = readJson(p.liveJson());
   return j ? (j.oauthAccount || null) : null;
@@ -54,5 +80,5 @@ function injectOAuthIntoLive(oauthAccount) {
 
 module.exports = {
   list, getCurrent, setCurrent, writeSlot, readSlot, email,
-  captureOAuthFromLive, injectOAuthIntoLive,
+  deriveName, adoptCurrent, captureOAuthFromLive, injectOAuthIntoLive,
 };

@@ -6,6 +6,9 @@ const { t } = require('./i18n.js');
 
 async function main(argv) {
   const [cmd, ...rest] = argv;
+  // First-run safety: adopt the already logged-in account into the vault so the
+  // live login is registered before any add/switch can overwrite it. Idempotent.
+  vault.adoptCurrent();
   switch (cmd) {
     case 'list': {
       const cur = vault.getCurrent();

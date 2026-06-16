@@ -51,3 +51,39 @@ test('captureOAuthFromLive reads live oauthAccount', () => {
   const vault = require('../src/vault.js');
   assert.strictEqual(vault.captureOAuthFromLive().emailAddress, 'cap@x.com');
 });
+
+test('adoptCurrent seeds the vault from the live login when empty', () => {
+  const h = freshHome();
+  fs.writeFileSync(path.join(h, '.claude', '.credentials.json'), '{"claudeAiOauth":{"accessToken":"LIVE"}}');
+  fs.writeFileSync(path.join(h, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'gabriela@gmail.com' } }));
+  const vault = require('../src/vault.js');
+  const name = vault.adoptCurrent();
+  assert.strictEqual(name, 'gabriela');
+  assert.strictEqual(vault.getCurrent(), 'gabriela');
+  assert.match(vault.readSlot('gabriela').credentialsText, /LIVE/);
+  assert.strictEqual(vault.readSlot('gabriela').oauthAccount.emailAddress, 'gabriela@gmail.com');
+});
+
+test('adoptCurrent is a no-op when a current account already exists', () => {
+  const h = freshHome();
+  fs.writeFileSync(path.join(h, '.claude', '.credentials.json'), '{"x":1}');
+  const vault = require('../src/vault.js');
+  fs.mkdirSync(require('../src/paths.js').vaultDir(), { recursive: true });
+  vault.writeSlot('work', { credentialsText: '{}', oauthAccount: {} });
+  vault.setCurrent('work');
+  assert.strictEqual(vault.adoptCurrent(), null);
+  assert.strictEqual(vault.getCurrent(), 'work');
+});
+
+test('adoptCurrent returns null when there is no live login', () => {
+  freshHome();
+  const vault = require('../src/vault.js');
+  assert.strictEqual(vault.adoptCurrent(), null);
+});
+
+test('adoptCurrent falls back to "default" without an email', () => {
+  const h = freshHome();
+  fs.writeFileSync(path.join(h, '.claude', '.credentials.json'), '{"x":1}');
+  const vault = require('../src/vault.js');
+  assert.strictEqual(vault.adoptCurrent(), 'default');
+});

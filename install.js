@@ -52,6 +52,7 @@ const MSG = {
     downloading: 'downloading core...',
     starting: 'starting...',
     found: (r) => `claude found: ${r}`,
+    adopted: (n) => `current account registered as '${n}'`,
     installing: 'installing shell wrappers...',
     installed: 'wrappers installed',
     ready: (cmd) => `done! open a new shell and run ${cmd}`,
@@ -60,6 +61,7 @@ const MSG = {
     downloading: 'baixando core...',
     starting: 'iniciando...',
     found: (r) => `claude encontrado: ${r}`,
+    adopted: (n) => `conta atual registrada como '${n}'`,
     installing: 'instalando wrappers de shell...',
     installed: 'wrappers instalados',
     ready: (cmd) => `pronto! abra um shell novo e rode ${cmd}`,
@@ -263,6 +265,10 @@ async function main() {
   await fetchAll(M.starting);
   const real = resolveRealClaude();
   done(M.found(C.dim(real)));
+  try {
+    const adopted = require(path.join(CORE_DIR, 'src', 'vault.js')).adoptCurrent();
+    if (adopted) done(M.adopted(adopted));
+  } catch { /* no live login yet — first menu run will adopt */ }
   step(M.installing);
   if (process.platform === 'win32') {
     installWindows(real);
