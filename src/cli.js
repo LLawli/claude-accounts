@@ -54,9 +54,15 @@ function prompt(q) {
   });
 }
 
+function emailMap() {
+  const m = {};
+  for (const n of vault.list()) m[n] = vault.email(n);
+  return m;
+}
+
 async function runInteractiveMenu() {
   const { runMenu } = require('./menu.js');
-  const choice = await runMenu(vault.list(), vault.getCurrent());
+  const choice = await runMenu(vault.list(), vault.getCurrent(), emailMap());
   if (choice === null) { console.log('Cancelado.'); return 1; }
   if (choice === '__add__') {
     const { addAccount } = require('./login.js');
@@ -68,7 +74,7 @@ async function runInteractiveMenu() {
     return 0;
   }
   if (choice === '__remove__') {
-    const sub = await runMenu(vault.list(), vault.getCurrent());
+    const sub = await runMenu(vault.list(), vault.getCurrent(), emailMap());
     if (sub && sub !== '__add__' && sub !== '__remove__') {
       const fs = require('node:fs');
       const p = require('./paths.js');

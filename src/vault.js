@@ -36,6 +36,11 @@ function readSlot(name) {
   };
 }
 
+function email(name) {
+  const o = readJson(p.slotOAuth(name));
+  return (o && o.emailAddress) || '';
+}
+
 function captureOAuthFromLive() {
   const j = readJson(p.liveJson());
   return j ? (j.oauthAccount || null) : null;
@@ -48,6 +53,6 @@ function injectOAuthIntoLive(oauthAccount) {
 }
 
 module.exports = {
-  list, getCurrent, setCurrent, writeSlot, readSlot,
+  list, getCurrent, setCurrent, writeSlot, readSlot, email,
   captureOAuthFromLive, injectOAuthIntoLive,
 };
