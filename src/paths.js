@@ -10,11 +10,12 @@ function vaultDir() { return path.join(claudeDir(), '.accounts'); }
 function liveCreds() { return path.join(claudeDir(), '.credentials.json'); }
 function liveJson() { return path.join(home(), '.claude.json'); }
 function markerPath() { return path.join(vaultDir(), 'current'); }
+function lockPath() { return path.join(vaultDir(), '.lock'); }
 function slotDir(name) { return path.join(vaultDir(), name); }
 function slotCreds(name) { return path.join(slotDir(name), 'credentials.json'); }
 function slotOAuth(name) { return path.join(slotDir(name), 'oauthAccount.json'); }
 
 module.exports = {
   home, coreDir, configPath, claudeDir, vaultDir, liveCreds, liveJson,
-  markerPath, slotDir, slotCreds, slotOAuth,
+  markerPath, lockPath, slotDir, slotCreds, slotOAuth,
 };
