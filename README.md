@@ -4,18 +4,7 @@
 
 `claude --accounts` opens an arrow-key selector, swaps the active login in place, and launches Claude. Personal, work, client — one keypress apart.
 
-```
-  Claude Accounts
-
-  ❯ personal      personal@example.com   ● ativa
-    work          work@example.com
-    client-acme   acme@example.com
-
-    + adicionar conta
-    - remover conta
-
-  ↑/↓ navegar · enter trocar · esc sair
-```
+![selector](docs/img/selector.png)
 
 ---
 
