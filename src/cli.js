@@ -62,13 +62,28 @@ function emailMap() {
   return m;
 }
 
+async function loadUsage() {
+  if (process.env.CLAUDE_ACCOUNTS_NO_USAGE) return {};
+  const names = vault.list();
+  if (!names.length) return {};
+  const usage = require('./usage.js');
+  process.stdout.write(`  ${t('usageLoading')}`);
+  let map = {};
+  try { map = await usage.getAll(names, vault.getCurrent()); } catch { /* offline -> no bars */ }
+  process.stdout.write('\r\x1b[2K');
+  return map;
+}
+
 async function runInteractiveMenu() {
   const { runMenu, confirm } = require('./menu.js');
+  // Fetch usage once up front (refreshes expired tokens, persists them) so the
+  // menu can show per-account bars without stalling on each redraw.
+  const usage = await loadUsage();
   // Loop so management actions (add/remove) return to the menu. Only an explicit
   // account switch (or add+switch) returns 0, which is what makes the wrapper
   // launch claude afterwards; remove and cancel return without launching.
   for (;;) {
-    const choice = await runMenu(vault.list(), vault.getCurrent(), emailMap());
+    const choice = await runMenu(vault.list(), vault.getCurrent(), emailMap(), { usage });
     if (choice === null) { console.log(t('cancelled')); return 1; }
     if (choice === '__add__') {
       const { addAccount } = require('./login.js');

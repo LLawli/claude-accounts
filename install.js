@@ -10,6 +10,7 @@ const RAW = 'https://raw.githubusercontent.com/SrDarf/claude-accounts/main';
 const CORE_FILES = [
   'src/paths.js', 'src/fsutil.js', 'src/lock.js', 'src/i18n.js', 'src/vault.js',
   'src/switch.js', 'src/login.js', 'src/claude-path.js', 'src/menu.js', 'src/cli.js',
+  'src/usage.js',
 ];
 const WRAPPER_FILES = [
   'wrappers/claude.cmd', 'wrappers/claude.ps1.tmpl', 'wrappers/claude.sh.tmpl',

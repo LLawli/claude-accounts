@@ -31,6 +31,12 @@ const STRINGS = {
     unknownVault: (n) => `unknown account in vault: '${n}'`,
     invalidName: (n) => `invalid name: '${n}'`,
     exists: (n) => `account '${n}' already exists`,
+    usageLoading: 'loading usage…',
+    usageSession: 'session',
+    usageWeek: 'week',
+    usageReset: 'reset',
+    usageNow: 'now',
+    usageUnavailable: 'usage unavailable',
   },
   pt: {
     menuTitle: 'Claude Accounts',
@@ -59,6 +65,12 @@ const STRINGS = {
     unknownVault: (n) => `conta desconhecida no cofre: '${n}'`,
     invalidName: (n) => `nome invalido: '${n}'`,
     exists: (n) => `conta '${n}' ja existe`,
+    usageLoading: 'carregando uso…',
+    usageSession: 'sessao',
+    usageWeek: 'semana',
+    usageReset: 'reseta',
+    usageNow: 'agora',
+    usageUnavailable: 'uso indisponivel',
   },
 };
 
