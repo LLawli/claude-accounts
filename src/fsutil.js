@@ -29,4 +29,15 @@ function chmodSafe(p, mode, label) {
   }
 }
 
-module.exports = { atomicWrite, readJson, chmodSafe };
+// Tag an error with the operation/step that failed (surfaced by cli.js even
+// without -v) and an optional exit code / cause. e.g.
+//   throw fail('switch:partial', msg, { cause: e, exit: 75 })
+function fail(step, message, opts = {}) {
+  const e = new Error(message);
+  e.caStep = step;
+  if (opts.cause) e.cause = opts.cause;
+  if (opts.exit) e.caExit = opts.exit;
+  return e;
+}
+
+module.exports = { atomicWrite, readJson, chmodSafe, fail };

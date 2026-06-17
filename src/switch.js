@@ -1,7 +1,7 @@
 'use strict';
 const p = require('./paths.js');
 const vault = require('./vault.js');
-const { atomicWrite, chmodSafe } = require('./fsutil.js');
+const { atomicWrite, chmodSafe, fail } = require('./fsutil.js');
 const { withLock } = require('./lock.js');
 const { t } = require('./i18n.js');
 const audit = require('./audit.js');
@@ -28,9 +28,15 @@ function switchAccount(target) {
 
     atomicWrite(p.liveCreds(), slot.credentialsText);
     chmodSafe(p.liveCreds(), 0o600, 'live-creds');
-    vault.injectOAuthIntoLive(slot.oauthAccount || {});
-
-    vault.setCurrent(target);
+    // Past here the live creds are already the target's. If oauth/marker fail to
+    // commit, report a recoverable PARTIAL switch (exit 75) instead of an opaque
+    // error, so the user knows to re-run and which state they're in.
+    try {
+      vault.injectOAuthIntoLive(slot.oauthAccount || {});
+      vault.setCurrent(target);
+    } catch (e) {
+      throw fail('switch:partial', t('switchPartial', target), { cause: e, exit: 75 });
+    }
     const email = (slot.oauthAccount || {}).emailAddress || null;
     audit.ok('switch', { account: target, from, to: target, email, cred: audit.credMeta(slot.credentialsText) });
     return { switched: true, account: target, email, savedFrom };

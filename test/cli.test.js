@@ -70,3 +70,24 @@ test('switch reports the active email on stdout', () => {
   assert.strictEqual(r.status, 0);
   assert.match(r.stdout, /h@x\.com/);
 });
+
+test('doctor exits non-zero on an incomplete core; log shows the audit trail', () => {
+  const h = freshHome({ accounts: true });
+  process.env.CLAUDE_ACCOUNTS_HOME = h;
+  delete require.cache[require.resolve('../src/vault.js')];
+  const vault = require('../src/vault.js');
+  vault.writeSlot('work', { credentialsText: '{"t":"W"}', oauthAccount: { emailAddress: 'w@x.com' } });
+  vault.writeSlot('home', { credentialsText: '{"t":"H"}', oauthAccount: { emailAddress: 'h@x.com' } });
+  fs.writeFileSync(path.join(h, '.claude', '.credentials.json'), '{"t":"W"}');
+  fs.writeFileSync(path.join(h, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'w@x.com' } }));
+  vault.setCurrent('work');
+
+  const d = run(h, ['doctor']);
+  assert.notStrictEqual(d.status, 0); // core files are not staged in the test home
+  assert.match(d.stdout, /claude-accounts doctor/);
+
+  run(h, ['switch', 'home']); // writes an audit record
+  const lg = run(h, ['log']);
+  assert.strictEqual(lg.status, 0);
+  assert.match(lg.stdout, /switch/);
+});

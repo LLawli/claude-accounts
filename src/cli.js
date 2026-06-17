@@ -49,6 +49,17 @@ async function main(argv) {
     case 'menu': {
       return runInteractiveMenu();
     }
+    case 'doctor':
+    case 'status': {
+      const doctor = require('./doctor.js');
+      const report = doctor.collect();
+      if (rest.includes('--json')) log.result(JSON.stringify(report, null, 2));
+      else process.stdout.write(doctor.render(report));
+      return doctor.exitCode(report);
+    }
+    case 'log': {
+      return showAudit(rest);
+    }
     default:
       log.error(t('unknown', cmd || '(vazio)'));
       return 2;
@@ -67,6 +78,28 @@ function emailMap(names = vault.list()) {
   const m = {};
   for (const n of names) m[n] = vault.email(n);
   return m;
+}
+
+// Read-only audit reader: `log [N] [--json] [--fails]`. Reads the rotated
+// generation then the live log so order is chronological.
+function showAudit(rest) {
+  const p = require('./paths.js');
+  const fs = require('node:fs');
+  let lines = [];
+  for (const f of [p.auditLog() + '.1', p.auditLog()]) {
+    try { lines = lines.concat(fs.readFileSync(f, 'utf8').split('\n').filter(Boolean)); } catch { /* absent */ }
+  }
+  if (!lines.length) { log.result(t('noAuditYet')); return 0; }
+  const n = Number((rest.find((a) => /^\d+$/.test(a))) || 50);
+  const recs = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  const shown = (rest.includes('--fails') ? recs.filter((r) => r.outcome === 'fail') : recs).slice(-n);
+  if (rest.includes('--json')) { for (const r of shown) log.result(JSON.stringify(r)); return 0; }
+  for (const r of shown) {
+    const who = (r.from || r.to) ? `${r.from || '?'} -> ${r.to || r.account || '?'}` : (r.account || '');
+    log.result(`${r.ts}  ${String(r.action).padEnd(11)} ${String(r.outcome).padEnd(5)} ${who}${r.dur_ms ? `  (${r.dur_ms}ms)` : ''}`);
+    if (r.outcome === 'fail') log.result(`    ${r.reason || ''} ${(r.err && r.err.message) || ''}`.trimEnd());
+  }
+  return 0;
 }
 
 // Map an addAccount failure to the most specific reason the user can act on,

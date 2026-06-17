@@ -6,7 +6,7 @@
 const CORE_FILES = [
   'src/core-files.js', 'src/paths.js', 'src/fsutil.js', 'src/log.js', 'src/audit.js',
   'src/lock.js', 'src/i18n.js', 'src/vault.js', 'src/switch.js', 'src/login.js',
-  'src/claude-path.js', 'src/menu.js', 'src/cli.js',
+  'src/claude-path.js', 'src/menu.js', 'src/doctor.js', 'src/cli.js',
 ];
 const WRAPPER_FILES = [
   'wrappers/claude.cmd', 'wrappers/claude.ps1.tmpl', 'wrappers/claude.sh.tmpl',
