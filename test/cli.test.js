@@ -47,3 +47,26 @@ test('unknown subcommand exits non-zero', () => {
   const r = run(freshHome({ accounts: true }), ['bogus']);
   assert.notStrictEqual(r.status, 0);
 });
+
+test('remove of a nonexistent account reports not-found and exits 1', () => {
+  const h = freshHome({ accounts: true });
+  const r = run(h, ['remove', 'ghost']);
+  assert.strictEqual(r.status, 1, 'must NOT report success for a no-op delete');
+  assert.match(r.stdout + r.stderr, /no such account|ghost/);
+});
+
+test('switch reports the active email on stdout', () => {
+  const h = freshHome({ accounts: true });
+  process.env.CLAUDE_ACCOUNTS_HOME = h;
+  delete require.cache[require.resolve('../src/vault.js')];
+  const vault = require('../src/vault.js');
+  vault.writeSlot('work', { credentialsText: '{"t":"W"}', oauthAccount: { emailAddress: 'w@x.com' } });
+  vault.writeSlot('home', { credentialsText: '{"t":"H"}', oauthAccount: { emailAddress: 'h@x.com' } });
+  fs.writeFileSync(path.join(h, '.claude', '.credentials.json'), '{"t":"W"}');
+  fs.writeFileSync(path.join(h, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'w@x.com' } }));
+  vault.setCurrent('work');
+
+  const r = run(h, ['switch', 'home']);
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /h@x\.com/);
+});

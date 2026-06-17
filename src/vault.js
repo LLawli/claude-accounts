@@ -159,6 +159,7 @@ function saveCurrentLogin() {
     const liveOAuth = captureOAuthFromLive();
     const { name, oauth } = resolveCurrentSlot(liveOAuth);
     writeSlot(name, { credentialsText, oauthAccount: liveOAuth || oauth || {} });
+    audit.ok('save-slot', { account: name, cred: audit.credMeta(credentialsText) });
     return name;
   });
 }
@@ -172,7 +173,7 @@ function adoptCurrent() {
   return withLock(p.lockPath(), () => {
     if (getCurrent()) return null; // re-check under lock
     const name = saveCurrentLogin();
-    if (name) setCurrent(name);
+    if (name) { setCurrent(name); audit.ok('adopt', { account: name }); }
     return name;
   });
 }
@@ -194,6 +195,7 @@ function removeAccount(name) {
     const existed = fs.existsSync(dir);
     fs.rmSync(dir, { recursive: true, force: true });
     if (getCurrent() === name) clearCurrent();
+    audit.record('remove', { account: name, outcome: 'ok', reason: existed ? undefined : 'not-found' });
     return { removed: existed, account: name };
   });
 }

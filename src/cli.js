@@ -6,45 +6,51 @@ const { t } = require('./i18n.js');
 const log = require('./log.js');
 const audit = require('./audit.js');
 
+// Commands that may mutate the vault. Read-only commands (list/current/doctor)
+// must not, so they skip the first-run adoptCurrent (which would write a slot).
+const MUTATING = new Set(['switch', 'add', 'remove', 'menu']);
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
-  // First-run safety: adopt the already logged-in account into the vault so the
-  // live login is registered before any add/switch can overwrite it. Idempotent.
-  vault.adoptCurrent();
+  if (MUTATING.has(cmd)) {
+    const adopted = vault.adoptCurrent();
+    if (adopted) log.info(t('adopted', adopted)); // stderr: visible, doesn't pollute results
+  }
   switch (cmd) {
     case 'list': {
       const cur = vault.getCurrent();
-      for (const n of vault.list()) console.log(n === cur ? `* ${n}` : `  ${n}`);
+      for (const n of vault.list()) log.result(n === cur ? `* ${n}` : `  ${n}`);
       return 0;
     }
     case 'current': {
-      const cur = vault.getCurrent();
-      console.log(cur || '(nenhuma)');
+      log.result(vault.getCurrent() || '(nenhuma)');
       return 0;
     }
     case 'switch': {
-      if (!rest[0]) { console.error(t('usageSwitch')); return 2; }
+      if (!rest[0]) { log.error(t('usageSwitch')); return 2; }
       reportSwitch(switchAccount(rest[0]));
       return 0;
     }
     case 'remove': {
-      if (!rest[0]) { console.error(t('usageRemove')); return 2; }
-      vault.removeAccount(rest[0]);
-      console.log(t('removed', rest[0]));
+      if (!rest[0]) { log.error(t('usageRemove')); return 2; }
+      const r = vault.removeAccount(rest[0]);
+      if (!r.removed) { log.result(t('notFound', rest[0])); return 1; } // no false "removed"
+      log.result(t('removed', rest[0]));
       return 0;
     }
     case 'add': {
       const { addAccount } = require('./login.js');
       const name = rest[0] || await prompt(t('promptName'));
       const r = await addAccount(name, {});
-      console.log(r.added ? t('added', name) : t('nothingCaptured'));
-      return r.added ? 0 : 1;
+      if (r.added) { log.result(r.email ? t('addedEmail', name, r.email) : t('added', name)); return 0; }
+      log.result(addFailMessage(r));
+      return 1;
     }
     case 'menu': {
       return runInteractiveMenu();
     }
     default:
-      console.error(t('unknown', cmd || '(vazio)'));
+      log.error(t('unknown', cmd || '(vazio)'));
       return 2;
   }
 }
@@ -63,8 +69,20 @@ function emailMap(names = vault.list()) {
   return m;
 }
 
+// Map an addAccount failure to the most specific reason the user can act on,
+// instead of the old blanket "Nothing captured".
+function addFailMessage(r) {
+  if (r.keyringSuspected || r.reason === 'keyring') return t('addKeyring');
+  if (r.reason === 'timeout') return t('addTimeout');
+  return t('nothingCaptured');
+}
+
 function reportSwitch(r) {
-  console.log(r.switched ? t('activeNow', r.account) : t('already', r.account));
+  if (r.savedFrom && r.savedFrom !== r.account) log.debug('switch.saved-prev', { account: r.savedFrom });
+  if (!r.switched) { log.result(t('already', r.account)); return; }
+  // Surface the identity so the user can confirm WHO is now live; warn if unknown.
+  if (!r.email) log.warn('switch.no-identity', { account: r.account });
+  log.result(r.email ? t('activeNowEmail', r.account, r.email) : t('activeNow', r.account));
 }
 
 async function runInteractiveMenu() {
@@ -77,25 +95,25 @@ async function runInteractiveMenu() {
     const current = vault.getCurrent();
     const emails = emailMap(names);
     const choice = await runMenu(names, current, emails);
-    if (choice === null) { console.log(t('cancelled')); return 1; }
+    if (choice === null) { log.result(t('cancelled')); return 1; }
     if (choice === '__add__') {
       const { addAccount } = require('./login.js');
       const name = await prompt(t('promptName'));
       const r = await addAccount(name, {});
-      if (!r.added) { console.log(t('nothingShort')); return 1; }
+      if (!r.added) { log.result(addFailMessage(r)); return 1; }
       reportSwitch(switchAccount(name));
       return 0;
     }
     if (choice === '__remove__') {
-      if (!names.length) { console.log(t('nothingToRemove')); continue; }
+      if (!names.length) { log.result(t('nothingToRemove')); continue; }
       // Distinct destructive picker (no add/remove rows, red styling) so it can't
       // be mistaken for the switch menu, plus an explicit confirmation.
       const sub = await runMenu(names, current, emails, {
         title: t('removeTitle'), hint: t('removeHint'), withActions: false, danger: true,
       });
       if (sub && await confirm(t('confirmRemove', sub))) {
-        vault.removeAccount(sub);
-        console.log(t('removed', sub));
+        const r = vault.removeAccount(sub);
+        log.result(r.removed ? t('removed', sub) : t('notFound', sub));
       }
       continue; // back to the main menu; never launch claude from a remove
     }
