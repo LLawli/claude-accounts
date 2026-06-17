@@ -3,6 +3,8 @@
 const vault = require('./vault.js');
 const { switchAccount } = require('./switch.js');
 const { t } = require('./i18n.js');
+const log = require('./log.js');
+const audit = require('./audit.js');
 
 async function main(argv) {
   const [cmd, ...rest] = argv;
@@ -102,6 +104,16 @@ async function runInteractiveMenu() {
   }
 }
 
-main(process.argv.slice(2))
+const cliArgv = log.stripFlags(process.argv.slice(2));
+main(cliArgv)
   .then((code) => process.exit(code))
-  .catch((e) => { console.error(`[claude-accounts] ${e.message}`); process.exit(1); });
+  .catch((e) => {
+    const op = e.caStep ? ` (${e.caStep})` : '';
+    process.stderr.write(`[claude-accounts]${op} ${e.message}\n`);
+    if (log.level() >= log.LEVELS.DEBUG) {
+      if (e.stack) process.stderr.write(e.stack + '\n');
+      if (e.cause) process.stderr.write(`caused by: ${e.cause.stack || e.cause}\n`);
+    }
+    audit.fail('fatal', e, { reason: cliArgv[0] || null });
+    process.exit(e.caExit || 1);
+  });

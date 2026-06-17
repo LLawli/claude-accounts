@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { upsertBlock, normLang, CORE_FILES } = require('../install.js');
+const { CORE_FILES: SRC_CORE_FILES } = require('../src/core-files.js');
 
 const START = '# >>> claude-accounts >>>';
 const END = '# <<< claude-accounts <<<';
@@ -23,6 +24,10 @@ test('upsertBlock replaces only its own block', () => {
   assert.ok(!out.includes('OLD'));
   // exactly one block
   assert.strictEqual(out.split(START).length - 1, 1);
+});
+
+test('install.js CORE_FILES stays in sync with src/core-files.js', () => {
+  assert.deepStrictEqual([...CORE_FILES].sort(), [...SRC_CORE_FILES].sort());
 });
 
 test('CORE_FILES covers every src/*.js module', () => {
