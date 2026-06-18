@@ -86,6 +86,9 @@ function renderLines(items, idx, opts = {}) {
   // Reserve a fixed-width column for the active tag so the usage bars line up
   // whether or not a given row carries the "● active" badge.
   const tagPlain = `● ${t('menuActive')}`;
+  // Use the padded (bar) layout for ALL rows whenever ANY account has usage, so a
+  // row with empty/failed usage doesn't fall back to a narrower layout and misalign.
+  const anyUsage = !!usage && names.some((it) => usageInline(usage[it.value]) !== '');
   const lines = ['', `  ${danger ? red(title) : accentBold(title)}`, ''];
 
   items.forEach((it, i) => {
@@ -100,7 +103,7 @@ function renderLines(items, idx, opts = {}) {
       const padded = it.label.padEnd(labelW);
       const label = selected ? (danger ? red(padded) : accentBold(padded)) : padded;
       const usageStr = usage ? usageInline(usage[it.value]) : '';
-      if (usageStr) {
+      if (anyUsage) {
         // Pad the name+email+tag block to a stable width so every row's bars
         // start at the same column.
         const mailCell = mailW ? `  ${dim((it.email || '').padEnd(mailW))}` : '';
