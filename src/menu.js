@@ -14,6 +14,46 @@ function accentBold(s) { return `${ACCENT}${BOLD}${s}${RESET}`; }
 function dim(s) { return `${DIM}${s}${RESET}`; }
 function red(s) { return `${RED}${s}${RESET}`; }
 
+// Two-tone bar: accent for the filled portion, dim for the rest. Claude's /usage
+// look, scaled to fit beside an account row.
+function bar(pct, width = 10) {
+  const filled = Math.max(0, Math.min(width, Math.round((pct / 100) * width)));
+  return `${ACCENT}${'█'.repeat(filled)}${RESET}${DIM}${'░'.repeat(width - filled)}${RESET}`;
+}
+
+// Compact relative reset, e.g. "42m", "3h09m", "5d 4h". Returns t('usageNow')
+// once the window has rolled over.
+function fmtReset(ms) {
+  if (!ms) return '';
+  const d = ms - Date.now();
+  if (d <= 0) return t('usageNow');
+  const mins = Math.floor(d / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h${String(mins % 60).padStart(2, '0')}m`;
+  const days = Math.floor(hrs / 24);
+  const remH = hrs % 24;
+  return `${days}d${remH ? ` ${remH}h` : ''}`;
+}
+
+// Inline usage segment drawn on the SAME line as the account, e.g.
+//   5h ██████░░ 62% ·3h08m   7d █░░░░░░░ 6% ·6d
+// `u` is the per-account result from usage.getAll; missing/failed accounts get a
+// dim placeholder so the column stays aligned.
+function usageInline(u) {
+  if (!u) return '';
+  if (!u.ok) return dim(t('usageUnavailable'));
+  const seg = (label, lim) => {
+    if (!lim) return '';
+    const pct = Math.round(lim.pct);
+    const pctStr = `${pct}%`.padStart(4);
+    const pctCol = pct >= 90 ? red(pctStr) : accent(pctStr);
+    const reset = lim.resetsAt ? ` ${dim(`·${fmtReset(lim.resetsAt)}`)}` : '';
+    return `${dim(label)} ${bar(lim.pct, 8)} ${pctCol}${reset}`;
+  };
+  return [seg('5h', u.session), seg('7d', u.week)].filter(Boolean).join('   ');
+}
+
 function buildItems(names, current, emails = {}, withActions = true) {
   const accounts = names.map((n) => ({
     label: n, value: n, current: n === current, email: emails[n] || '',
@@ -39,8 +79,13 @@ function renderLines(items, idx, opts = {}) {
   const title = opts.title || t('menuTitle');
   const hint = opts.hint || t('menuHint');
   const danger = !!opts.danger;
+  const usage = opts.usage || null;
   const names = items.filter((it) => !it.value.startsWith('__'));
   const labelW = names.reduce((m, it) => Math.max(m, it.label.length), 0);
+  const mailW = names.reduce((m, it) => Math.max(m, (it.email || '').length), 0);
+  // Reserve a fixed-width column for the active tag so the usage bars line up
+  // whether or not a given row carries the "● active" badge.
+  const tagPlain = `● ${t('menuActive')}`;
   const lines = ['', `  ${danger ? red(title) : accentBold(title)}`, ''];
 
   items.forEach((it, i) => {
@@ -54,9 +99,18 @@ function renderLines(items, idx, opts = {}) {
     } else {
       const padded = it.label.padEnd(labelW);
       const label = selected ? (danger ? red(padded) : accentBold(padded)) : padded;
-      const mail = it.email ? `  ${dim(it.email)}` : '';
-      const tag = it.current ? `   ${accent(`● ${t('menuActive')}`)}` : '';
-      lines.push(`  ${pointer} ${label}${mail}${tag}`);
+      const usageStr = usage ? usageInline(usage[it.value]) : '';
+      if (usageStr) {
+        // Pad the name+email+tag block to a stable width so every row's bars
+        // start at the same column.
+        const mailCell = mailW ? `  ${dim((it.email || '').padEnd(mailW))}` : '';
+        const tagCell = `   ${it.current ? accent(tagPlain) : ' '.repeat(tagPlain.length)}`;
+        lines.push(`  ${pointer} ${label}${mailCell}${tagCell}   ${usageStr}`);
+      } else {
+        const mail = it.email ? `  ${dim(it.email)}` : '';
+        const tag = it.current ? `   ${accent(tagPlain)}` : '';
+        lines.push(`  ${pointer} ${label}${mail}${tag}`);
+      }
     }
   });
 
@@ -157,4 +211,4 @@ function confirm(message, opts = {}) {
   });
 }
 
-module.exports = { buildItems, reduceKey, renderLines, runMenu, confirm };
+module.exports = { buildItems, reduceKey, renderLines, runMenu, confirm, bar, fmtReset, usageInline };

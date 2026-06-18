@@ -135,6 +135,15 @@ test('an account named "current" is rejected rather than corrupting the marker',
   assert.throws(() => vault.removeAccount('.lock'), /invalid|nome|name/i);
 });
 
+test('account names cannot start with a dash (CLI-flag safety)', () => {
+  setup();
+  const vault = require('../src/vault.js');
+  assert.strictEqual(vault.validAccountName('-v'), false);
+  assert.strictEqual(vault.validAccountName('--verbose'), false);
+  assert.strictEqual(vault.validAccountName('work'), true);
+  assert.throws(() => vault.removeAccount('-v'), /invalid|nome|name/i);
+});
+
 test('adopting an identity that derives to a reserved name avoids the marker collision', () => {
   const h = setup();
   const vault = require('../src/vault.js');

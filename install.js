@@ -7,9 +7,12 @@ const https = require('node:https');
 const cp = require('node:child_process');
 
 const RAW = 'https://raw.githubusercontent.com/SrDarf/claude-accounts/main';
+// NOTE: kept in sync with src/core-files.js (the installer runs before that file
+// is fetched, so it cannot require it). test/install.test.js asserts they match.
 const CORE_FILES = [
-  'src/paths.js', 'src/fsutil.js', 'src/lock.js', 'src/i18n.js', 'src/vault.js',
-  'src/switch.js', 'src/login.js', 'src/claude-path.js', 'src/menu.js', 'src/cli.js',
+  'src/core-files.js', 'src/paths.js', 'src/fsutil.js', 'src/log.js', 'src/audit.js',
+  'src/lock.js', 'src/i18n.js', 'src/vault.js', 'src/switch.js', 'src/login.js',
+  'src/claude-path.js', 'src/menu.js', 'src/usage.js', 'src/doctor.js', 'src/cli.js',
 ];
 const WRAPPER_FILES = [
   'wrappers/claude.cmd', 'wrappers/claude.ps1.tmpl', 'wrappers/claude.sh.tmpl',
@@ -203,6 +206,18 @@ async function fetchAll(startLabel) {
   }
 }
 
+// Fail loudly on a partial fetch BEFORE anything is wired into the shell, so a
+// dropped download never leaves a half-installed core that breaks cryptically.
+function verifyFetch(coreDir = CORE_DIR) {
+  const missing = [...CORE_FILES, ...WRAPPER_FILES].filter((rel) => {
+    try { return fs.statSync(path.join(coreDir, rel)).size === 0; } catch { return true; }
+  });
+  if (missing.length) {
+    throw new Error(`incomplete install: ${missing.length} file(s) missing or empty: `
+      + `${missing.join(', ')}. Re-run the installer; nothing was wired into your shell.`);
+  }
+  done(`verified ${CORE_FILES.length + WRAPPER_FILES.length} files`);
+}
 
 function installUnix(real) {
   const tmpl = fs.readFileSync(path.join(CORE_DIR, 'wrappers', 'claude.sh.tmpl'), 'utf8')
@@ -255,6 +270,7 @@ async function main() {
   writeConfig(lang);
   step(M.downloading);
   await fetchAll(M.starting);
+  verifyFetch();
   // Reuse the runtime resolver now that the core is fetched, so the installer
   // and the wrappers agree on the real binary (and both honor CLAUDE_ACCOUNTS_REAL).
   const { resolveRealClaude } = require(path.join(CORE_DIR, 'src', 'claude-path.js'));
@@ -279,4 +295,4 @@ if (require.main === module) {
   main().catch((e) => { console.error(`\n  ${C.accent('✗')} ${e.message}\n`); process.exit(1); });
 }
 
-module.exports = { upsertBlock, backupThenWrite, normLang, detectLang, CORE_FILES };
+module.exports = { upsertBlock, backupThenWrite, normLang, detectLang, verifyFetch, CORE_FILES, WRAPPER_FILES };

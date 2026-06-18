@@ -1,6 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { t, norm } = require('../src/i18n.js');
+const { t, norm, STRINGS } = require('../src/i18n.js');
+
+test('every string key exists in both en and pt', () => {
+  assert.deepStrictEqual(Object.keys(STRINGS.pt).sort(), Object.keys(STRINGS.en).sort());
+});
 
 test('norm maps locale-ish strings to pt/en or null', () => {
   assert.strictEqual(norm('pt-BR'), 'pt');

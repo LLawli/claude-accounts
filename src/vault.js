@@ -5,6 +5,8 @@ const p = require('./paths.js');
 const { atomicWrite, readJson, chmodSafe } = require('./fsutil.js');
 const { withLock } = require('./lock.js');
 const { t } = require('./i18n.js');
+const log = require('./log.js');
+const audit = require('./audit.js');
 
 // Concurrency contract: every mutator here self-locks the vault (p.lockPath()).
 // The lock is reentrant within a process, so a multi-step operation that must be
@@ -20,7 +22,9 @@ const { t } = require('./i18n.js');
 const RESERVED = new Set(['current', '.lock', '.', '..']);
 
 function validAccountName(name) {
-  return typeof name === 'string' && /^[A-Za-z0-9._-]+$/.test(name) && !RESERVED.has(name);
+  // First char must not be '-' so a name can never be mistaken for a CLI flag
+  // (e.g. `switch -v` would otherwise be stripped before it reaches the handler).
+  return typeof name === 'string' && /^[A-Za-z0-9._][A-Za-z0-9._-]*$/.test(name) && !RESERVED.has(name);
 }
 
 function list() {
@@ -51,9 +55,9 @@ function writeSlot(name, { credentialsText, oauthAccount }) {
   withLock(p.lockPath(), () => {
     atomicWrite(p.slotCreds(name), credentialsText);
     atomicWrite(p.slotOAuth(name), JSON.stringify(oauthAccount, null, 2));
-    chmodSafe(p.slotDir(name), 0o700);
-    chmodSafe(p.slotCreds(name), 0o600);
-    chmodSafe(p.slotOAuth(name), 0o600);
+    chmodSafe(p.slotDir(name), 0o700, 'slot-dir');
+    chmodSafe(p.slotCreds(name), 0o600, 'slot-creds');
+    chmodSafe(p.slotOAuth(name), 0o600, 'slot-oauth');
   });
 }
 
@@ -76,7 +80,8 @@ function email(name) {
 
 function deriveName(oauthAccount) {
   const e = (oauthAccount && oauthAccount.emailAddress) || '';
-  const local = String(e).split('@')[0].replace(/[^A-Za-z0-9._-]/g, '');
+  // Strip invalid chars AND any leading '-'/'.' so the result is a valid account name.
+  const local = String(e).split('@')[0].replace(/[^A-Za-z0-9._-]/g, '').replace(/^[-.]+/, '');
   return local || 'default';
 }
 
@@ -108,7 +113,9 @@ function captureOAuthFromLive() {
   // readLiveJson() directly so it still refuses to clobber a corrupt file.
   try {
     return readLiveJson().oauthAccount || null;
-  } catch {
+  } catch (e) {
+    log.warn('live.json.corrupt', { path: log.tilde(p.liveJson()), err: e.message, action: 'degraded-to-null-identity' });
+    audit.record('livejson.corrupt', { outcome: 'fail', reason: 'corrupt-live-json', paths: { liveJson: p.liveJson() } });
     return null;
   }
 }
@@ -138,7 +145,11 @@ function resolveCurrentSlot(liveOAuth) {
     const cur = getCurrent();
     if (cur && slots.includes(cur)) return { name: cur, oauth: storedOAuth(cur) };
   }
-  return { name: uniqueName(deriveName(liveOAuth || {}), slots), oauth: liveOAuth || {} };
+  const name = uniqueName(deriveName(liveOAuth || {}), slots);
+  // No live identity to key off: we are about to write a slot with empty oauth
+  // (e.g. corrupt ~/.claude.json). Announce it so the identity loss isn't silent.
+  if (!liveEmail) log.warn('slot.identity.unknown', { slot: name });
+  return { name, oauth: liveOAuth || {} };
 }
 
 // Capture the live login into the vault slot that matches its identity. Returns
@@ -151,6 +162,7 @@ function saveCurrentLogin() {
     const liveOAuth = captureOAuthFromLive();
     const { name, oauth } = resolveCurrentSlot(liveOAuth);
     writeSlot(name, { credentialsText, oauthAccount: liveOAuth || oauth || {} });
+    audit.ok('save-slot', { account: name, cred: audit.credMeta(credentialsText) });
     return name;
   });
 }
@@ -164,7 +176,7 @@ function adoptCurrent() {
   return withLock(p.lockPath(), () => {
     if (getCurrent()) return null; // re-check under lock
     const name = saveCurrentLogin();
-    if (name) setCurrent(name);
+    if (name) { setCurrent(name); audit.ok('adopt', { account: name }); }
     return name;
   });
 }
@@ -186,6 +198,7 @@ function removeAccount(name) {
     const existed = fs.existsSync(dir);
     fs.rmSync(dir, { recursive: true, force: true });
     if (getCurrent() === name) clearCurrent();
+    audit.record('remove', { account: name, outcome: 'ok', reason: existed ? undefined : 'not-found' });
     return { removed: existed, account: name };
   });
 }

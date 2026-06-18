@@ -27,6 +27,15 @@ test('runMenu and confirm are exported callables', () => {
   assert.strictEqual(typeof confirm, 'function');
 });
 
+test('renderLines draws a usage bar when usage data is provided', () => {
+  const items = buildItems(['work'], 'work', { work: 'w@x.com' });
+  const out = renderLines(items, 0, {
+    usage: { work: { ok: true, session: { pct: 50, resetsAt: null }, week: null } },
+  }).join('\n');
+  assert.match(out, /█/);    // filled bar segment
+  assert.match(out, /50%/);  // percentage label
+});
+
 test('buildItems attaches emails when provided', () => {
   const items = buildItems(['work'], 'work', { work: 'w@x.com' });
   assert.strictEqual(items[0].email, 'w@x.com');
