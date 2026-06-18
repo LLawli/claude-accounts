@@ -123,8 +123,25 @@ function reportSwitch(r) {
   log.result(r.email ? t('activeNowEmail', r.account, r.email) : t('activeNow', r.account));
 }
 
+// Fetch per-account usage once up front (refreshes + persists expired tokens) so
+// the menu can show bars without stalling on each redraw. Offline -> no bars.
+async function loadUsage() {
+  if (process.env.CLAUDE_ACCOUNTS_NO_USAGE) return {};
+  const names = vault.list();
+  if (!names.length) return {};
+  const usage = require('./usage.js');
+  process.stdout.write(`  ${t('usageLoading')}`);
+  let map = {};
+  try { map = await usage.getAll(names, vault.getCurrent()); } catch { /* offline -> no bars */ }
+  process.stdout.write('\r\x1b[2K');
+  return map;
+}
+
 async function runInteractiveMenu() {
   const { runMenu, confirm } = require('./menu.js');
+  // Fetch usage once up front (refreshes expired tokens, persists them) so the
+  // menu can show per-account bars without stalling on each redraw.
+  const usage = await loadUsage();
   // Loop so management actions (add/remove) return to the menu. Only an explicit
   // account switch (or add+switch) returns 0, which is what makes the wrapper
   // launch claude afterwards; remove and cancel return without launching.
@@ -132,7 +149,7 @@ async function runInteractiveMenu() {
     const names = vault.list();
     const current = vault.getCurrent();
     const emails = emailMap(names);
-    const choice = await runMenu(names, current, emails);
+    const choice = await runMenu(names, current, emails, { usage });
     if (choice === null) { log.result(t('cancelled')); return 1; }
     if (choice === '__add__') {
       const { addAccount } = require('./login.js');
@@ -147,7 +164,7 @@ async function runInteractiveMenu() {
       // Distinct destructive picker (no add/remove rows, red styling) so it can't
       // be mistaken for the switch menu, plus an explicit confirmation.
       const sub = await runMenu(names, current, emails, {
-        title: t('removeTitle'), hint: t('removeHint'), withActions: false, danger: true,
+        title: t('removeTitle'), hint: t('removeHint'), withActions: false, danger: true, usage,
       });
       if (sub && await confirm(t('confirmRemove', sub))) {
         const r = vault.removeAccount(sub);
