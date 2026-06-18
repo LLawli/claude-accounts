@@ -18,7 +18,7 @@ const audit = require('./audit.js');
 // outermost holder releases. The O_EXCL guarantee still excludes OTHER processes.
 const STALE_MS = 15_000;
 const POLL_MS = 25;
-const held = new Map(); // lockPath -> reentrancy depth held by THIS process
+const held = new Map(); // lockPath -> { depth, token } held by THIS process
 
 function sleep(ms) {
   // Synchronous sleep without a busy loop; the vault API is sync end to end.
@@ -26,16 +26,19 @@ function sleep(ms) {
 }
 
 function acquire(lockPath) {
-  const depth = held.get(lockPath) || 0;
-  if (depth > 0) { held.set(lockPath, depth + 1); return; } // re-entry: just count
+  const cur = held.get(lockPath);
+  if (cur) { cur.depth += 1; return; } // re-entry: just count
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  // A per-acquisition ownership token so release() only ever deletes OUR lock,
+  // never one that a deadline-steal replaced with another process's.
+  const token = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   const start = Date.now();
   for (;;) {
     try {
       const fd = fs.openSync(lockPath, 'wx'); // O_CREAT | O_EXCL
-      fs.writeSync(fd, `${process.pid}\n`);
+      fs.writeSync(fd, token + '\n');
       fs.closeSync(fd);
-      held.set(lockPath, 1);
+      held.set(lockPath, { depth: 1, token });
       return;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
@@ -64,10 +67,15 @@ function acquire(lockPath) {
 }
 
 function release(lockPath) {
-  const depth = held.get(lockPath) || 0;
-  if (depth > 1) { held.set(lockPath, depth - 1); return; } // inner holder
+  const cur = held.get(lockPath);
+  if (!cur) return;
+  if (cur.depth > 1) { cur.depth -= 1; return; } // inner holder
   held.delete(lockPath);
-  try { fs.rmSync(lockPath, { force: true }); } catch { /* already gone */ }
+  // Only remove the lock if it is STILL OURS — if a deadline-steal replaced it
+  // with another process's lock, deleting it would let a third racer in.
+  try {
+    if (fs.readFileSync(lockPath, 'utf8').trim() === cur.token) fs.rmSync(lockPath, { force: true });
+  } catch { /* already gone */ }
 }
 
 function withLock(lockPath, fn) {

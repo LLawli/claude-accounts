@@ -1,4 +1,5 @@
 'use strict';
+const fs = require('node:fs');
 const p = require('./paths.js');
 const vault = require('./vault.js');
 const { atomicWrite, chmodSafe, fail } = require('./fsutil.js');
@@ -22,21 +23,28 @@ function switchAccount(target) {
     const savedFrom = vault.saveCurrentLogin();
 
     const slot = vault.readSlot(target);
-    // Preflight: abort BEFORE overwriting live creds if ~/.claude.json exists but
-    // is corrupt, so we never leave creds=target while oauth/marker=previous.
+    // Preflight: abort BEFORE overwriting live creds if ~/.claude.json is corrupt.
     vault.readLiveJson();
+
+    // Snapshot the live login so a later failure can roll back to a CONSISTENT
+    // FROM state. Otherwise leaving creds=target while oauth/marker=from would make
+    // the next switch save the target's tokens into FROM's slot (cross-contamination).
+    const prevCreds = fs.existsSync(p.liveCreds()) ? fs.readFileSync(p.liveCreds(), 'utf8') : null;
+    const prevOAuth = vault.captureOAuthFromLive();
 
     atomicWrite(p.liveCreds(), slot.credentialsText);
     chmodSafe(p.liveCreds(), 0o600, 'live-creds');
-    // Past here the live creds are already the target's. If oauth/marker fail to
-    // commit, report a recoverable PARTIAL switch (exit 75) instead of an opaque
-    // error, so the user knows to re-run and which state they're in.
     try {
       vault.injectOAuthIntoLive(slot.oauthAccount || {});
       vault.setCurrent(target);
     } catch (e) {
-      throw fail('switch:partial', t('switchPartial', target), { cause: e, exit: 75 });
+      // Best-effort rollback to FROM; the original error is what we report.
+      try { if (prevCreds !== null) { atomicWrite(p.liveCreds(), prevCreds); chmodSafe(p.liveCreds(), 0o600, 'live-creds'); } } catch (_) { /* keep e */ }
+      try { vault.injectOAuthIntoLive(prevOAuth || {}); } catch (_) { /* keep e */ }
+      audit.fail('switch', e, { account: target, from, to: target });
+      throw fail('switch', t('switchFailed', target), { cause: e });
     }
+
     const email = (slot.oauthAccount || {}).emailAddress || null;
     audit.ok('switch', { account: target, from, to: target, email, cred: audit.credMeta(slot.credentialsText) });
     return { switched: true, account: target, email, savedFrom };

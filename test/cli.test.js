@@ -91,3 +91,13 @@ test('doctor exits non-zero on an incomplete core; log shows the audit trail', (
   assert.strictEqual(lg.status, 0);
   assert.match(lg.stdout, /switch/);
 });
+
+test('current reports a live-but-unregistered login on a fresh home (read-only)', () => {
+  const h = freshHome({ accounts: true });
+  fs.writeFileSync(path.join(h, '.claude', '.credentials.json'), '{"tok":"X"}');
+  fs.writeFileSync(path.join(h, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'fresh@x.com' } }));
+  const r = run(h, ['current']);
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /fresh@x\.com/);
+  assert.ok(!fs.existsSync(path.join(h, '.claude', '.accounts', 'current')), 'current must not register a marker');
+});

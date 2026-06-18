@@ -26,6 +26,9 @@ test('resolveLevel precedence: flags > env > default', () => {
   assert.strictEqual(resolveLevel([], {}).level, LEVELS.WARN);
   assert.strictEqual(resolveLevel(['-q'], { CLAUDE_ACCOUNTS_DEBUG: '1' }).level, LEVELS.ERROR);
   assert.ok(resolveLevel([], { CLAUDE_ACCOUNTS_DEBUG: 'login,lock' }).scopes.has('login'));
+  // 'silent' is index 0 — must resolve to SILENT, not fall back to WARN
+  assert.strictEqual(resolveLevel([], { CLAUDE_ACCOUNTS_LOG_LEVEL: 'silent' }).level, LEVELS.SILENT);
+  assert.strictEqual(resolveLevel([], { CLAUDE_ACCOUNTS_LOG_LEVEL: 'bogus' }).level, LEVELS.WARN);
 });
 
 test('stripFlags removes only its own tokens', () => {

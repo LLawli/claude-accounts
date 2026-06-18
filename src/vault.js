@@ -22,7 +22,9 @@ const audit = require('./audit.js');
 const RESERVED = new Set(['current', '.lock', '.', '..']);
 
 function validAccountName(name) {
-  return typeof name === 'string' && /^[A-Za-z0-9._-]+$/.test(name) && !RESERVED.has(name);
+  // First char must not be '-' so a name can never be mistaken for a CLI flag
+  // (e.g. `switch -v` would otherwise be stripped before it reaches the handler).
+  return typeof name === 'string' && /^[A-Za-z0-9._][A-Za-z0-9._-]*$/.test(name) && !RESERVED.has(name);
 }
 
 function list() {
@@ -78,7 +80,8 @@ function email(name) {
 
 function deriveName(oauthAccount) {
   const e = (oauthAccount && oauthAccount.emailAddress) || '';
-  const local = String(e).split('@')[0].replace(/[^A-Za-z0-9._-]/g, '');
+  // Strip invalid chars AND any leading '-'/'.' so the result is a valid account name.
+  const local = String(e).split('@')[0].replace(/[^A-Za-z0-9._-]/g, '').replace(/^[-.]+/, '');
   return local || 'default';
 }
 

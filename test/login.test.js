@@ -9,16 +9,19 @@ const { freshHome } = require('./helpers.js');
 process.env.CLAUDE_ACCOUNTS_CAPTURE_TIMEOUT_MS = '600';
 process.env.CLAUDE_ACCOUNTS_CAPTURE_STABILIZE_MS = '15';
 process.env.CLAUDE_ACCOUNTS_CAPTURE_POLL_MS = '8';
+process.env.CLAUDE_ACCOUNTS_CAPTURE_KILL_MS = '100';
 
 const setup = () => freshHome({ accounts: true, bust: ['vault', 'login', 'paths', 'fsutil'] });
 
-// A fake ChildProcess: optionally writes files (now or after a delay) and exits.
-function fakeChild({ write, writeAfter, exitAfter } = {}) {
+// A fake ChildProcess: optionally writes files (now/delayed), exits, or errors.
+// kill() emits 'exit' like a real process responding to SIGTERM.
+function fakeChild({ write, writeAfter, exitAfter, errorAfter } = {}) {
   const ee = new EventEmitter();
-  ee.kill = () => {};
+  ee.kill = () => ee.emit('exit', 0);
   if (writeAfter != null) setTimeout(() => { if (write) write(); }, writeAfter);
   else if (write) write();
   if (exitAfter != null) setTimeout(() => ee.emit('exit', 0), exitAfter);
+  if (errorAfter != null) setTimeout(() => ee.emit('error', new Error('spawn boom')), errorAfter);
   return ee;
 }
 const writeLogin = (cfgDir, email) => () => {
@@ -66,6 +69,15 @@ test('addAccount flags keyring when login writes an identity but no credential f
   assert.strictEqual(r.added, false);
   assert.strictEqual(r.reason, 'keyring');
   assert.strictEqual(r.keyringSuspected, true);
+});
+
+test('addAccount surfaces a spawn error instead of crashing the process', async () => {
+  setup();
+  const { addAccount } = require('../src/login.js');
+  // A real spawn failure (ENOENT/EACCES) emits an async 'error'; must be caught,
+  // not become an uncaught exception.
+  await assert.rejects(() => addAccount('boom', { spawnFn: () => fakeChild({ errorAfter: 5 }) }), /spawn boom/);
+  assert.ok(!require('../src/vault.js').list().includes('boom'));
 });
 
 test('addAccount rejects duplicate name', async () => {

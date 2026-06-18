@@ -23,7 +23,12 @@ async function main(argv) {
       return 0;
     }
     case 'current': {
-      log.result(vault.getCurrent() || '(nenhuma)');
+      const cur = vault.getCurrent();
+      if (cur) { log.result(cur); return 0; }
+      // No marker yet: report a live-but-unregistered login read-only (no mutation),
+      // so a fresh user isn't told '(none)' while actually logged in.
+      const live = vault.captureOAuthFromLive();
+      log.result(live && live.emailAddress ? `(${t('unregistered')}: ${live.emailAddress})` : '(nenhuma)');
       return 0;
     }
     case 'switch': {

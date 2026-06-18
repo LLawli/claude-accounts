@@ -34,7 +34,8 @@ function resolveLevel(argv, env) {
   if (level == null) {
     const lvl = env.CLAUDE_ACCOUNTS_LOG_LEVEL;
     const i = lvl ? NAMES.indexOf(String(lvl).toLowerCase()) : -1;
-    level = i > 0 ? i : LEVELS.WARN;
+    level = i >= 0 ? i : LEVELS.WARN; // i===0 is 'silent'; only an unknown value (-1) falls back
+
   }
   return { level, scopes };
 }

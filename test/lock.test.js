@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 // Isolate the core dir so a steal's audit record never touches the real home.
 process.env.CLAUDE_ACCOUNTS_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-home-'));
-const { withLock, STALE_MS } = require('../src/lock.js');
+const { withLock, acquire, release, STALE_MS } = require('../src/lock.js');
 
 function tmpLock() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lock-'));
@@ -44,6 +44,15 @@ test('withLock is reentrant within a process (nested same-path lock runs)', () =
   });
   assert.strictEqual(r, 'inner');
   assert.ok(!fs.existsSync(lp), 'released only after the outermost holder');
+});
+
+test('release does not delete a lock that was stolen/replaced by another holder', () => {
+  const lp = tmpLock();
+  acquire(lp); // writes OUR ownership token
+  fs.writeFileSync(lp, 'OTHER:999:zzz\n'); // simulate a deadline-steal: replaced with another token
+  release(lp); // must NOT remove a lock that is no longer ours
+  assert.ok(fs.existsSync(lp), 'foreign lock must survive our release (else a third racer gets in)');
+  fs.rmSync(lp, { force: true });
 });
 
 test('a stale lock left by a crashed process is stolen', () => {

@@ -17,6 +17,28 @@ const audit = require('./audit.js');
 const CAPTURE_TIMEOUT_MS = Number(process.env.CLAUDE_ACCOUNTS_CAPTURE_TIMEOUT_MS) || 300_000;
 const STABILIZE_MS = Number(process.env.CLAUDE_ACCOUNTS_CAPTURE_STABILIZE_MS) || 400;
 const POLL_MS = Number(process.env.CLAUDE_ACCOUNTS_CAPTURE_POLL_MS) || 150;
+const KILL_TIMEOUT_MS = Number(process.env.CLAUDE_ACCOUNTS_CAPTURE_KILL_MS) || 2000;
+
+// Restore the terminal after a TUI child is signalled (it may not run its own
+// teardown), so the user's shell isn't left in raw mode / the alternate screen.
+function restoreTty() {
+  try { if (process.stdout.isTTY) process.stdout.write('\x1b[?1049l\x1b[?25h'); } catch { /* ignore */ }
+  try { if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') process.stdin.setRawMode(false); } catch { /* ignore */ }
+}
+
+// Kill the temp login session and WAIT for it to actually exit (escalating to
+// SIGKILL) before the caller deletes its config dir.
+function terminate(child, alreadyExited) {
+  return new Promise((resolve) => {
+    if (!child || typeof child.kill !== 'function' || alreadyExited()) return resolve();
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    if (typeof child.once === 'function') child.once('exit', finish);
+    try { child.kill('SIGTERM'); } catch { return finish(); }
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } finish(); }, KILL_TIMEOUT_MS);
+    if (typeof timer.unref === 'function') timer.unref();
+  });
+}
 
 // Async so we can watch the credential file appear while the login session is
 // still open — the user only needs /login, not /exit. Returns a ChildProcess.
@@ -45,8 +67,11 @@ function waitForCredentials(credPath, deadline, isDead) {
         if (st.size === lastSize && st.mtimeMs === lastMtime) {
           if (now - stableSince >= STABILIZE_MS) return resolve('stable');
         } else { lastSize = st.size; lastMtime = st.mtimeMs; stableSince = now; }
-      } else if (isDead && isDead()) {
-        return reject(new Error('no-credentials'));
+      } else {
+        // Absent/empty: reset tracking so a create->unlink->recreate (rename churn)
+        // can't be mistaken for "unchanged since before", resolving prematurely.
+        lastSize = -1; lastMtime = -1; stableSince = 0;
+        if (isDead && isDead()) return reject(new Error('no-credentials'));
       }
       if (now >= deadline) return reject(new Error('timeout'));
       setTimeout(tick, POLL_MS);
@@ -73,16 +98,23 @@ async function addAccount(name, { spawnFn = defaultSpawn } = {}) {
   const started = Date.now();
   let child = null;
   let childExited = false;
+  let spawnError = null;
   slog.debug('capture.tmpdir', { cfgDir: log.tilde(tmp) });
   try {
     slog.debug('capture.spawn', { cfgDir: log.tilde(tmp) });
     child = spawnFn(tmp);
-    if (child && typeof child.on === 'function') child.on('exit', () => { childExited = true; });
+    if (child && typeof child.on === 'function') {
+      child.on('exit', () => { childExited = true; });
+      // Without this, a failed spawn (ENOENT/EACCES) emits an async 'error' with
+      // no handler -> uncaught exception that crashes the whole CLI.
+      child.on('error', (e) => { spawnError = e; childExited = true; });
+    }
 
     slog.debug('capture.watch.start', { cred: log.tilde(credPath), timeoutMs: CAPTURE_TIMEOUT_MS, stabilizeMs: STABILIZE_MS });
     try {
       await waitForCredentials(credPath, started + CAPTURE_TIMEOUT_MS, () => childExited);
     } catch (e) {
+      if (spawnError) throw spawnError; // spawn itself failed — surface it (catchable upstream)
       const elapsedMs = Date.now() - started;
       // keyring shape: login wrote an oauth identity but no credential FILE
       const keyringSuspected = !fs.existsSync(credPath) && hasOAuth(jsonPath);
@@ -107,8 +139,10 @@ async function addAccount(name, { spawnFn = defaultSpawn } = {}) {
     audit.ok('add', { account: name, email, cred: audit.credMeta(credentialsText), dur_ms: Date.now() - started });
     return { added: true, account: name, email };
   } finally {
-    // We captured (or gave up) without needing /exit — end the temp session.
-    if (child && typeof child.kill === 'function') { try { child.kill(); } catch { /* already gone */ } }
+    // End the temp session (no /exit needed), WAIT for it to die, restore the
+    // terminal it took over, THEN delete its config dir.
+    await terminate(child, () => childExited);
+    restoreTty();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }

@@ -69,3 +69,26 @@ test('switch preserves current slot oauth when live has none', () => {
   // work slot must keep its original oauth, not be clobbered to {}
   assert.strictEqual(vault.readSlot('work').oauthAccount.emailAddress, 'w@x.com');
 });
+
+test('a failed switch rolls back to a consistent FROM state (no contamination)', () => {
+  const h = setup();
+  const vault = require('../src/vault.js');
+  const { switchAccount } = require('../src/switch.js');
+  vault.writeSlot('work', { credentialsText: '{"tok":"W"}', oauthAccount: { emailAddress: 'w@x.com' } });
+  vault.writeSlot('home', { credentialsText: '{"tok":"H"}', oauthAccount: { emailAddress: 'h@x.com' } });
+  fs.writeFileSync(path.join(h, '.claude', '.credentials.json'), '{"tok":"W"}');
+  fs.writeFileSync(path.join(h, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'w@x.com' } }));
+  vault.setCurrent('work');
+
+  const orig = vault.injectOAuthIntoLive;
+  vault.injectOAuthIntoLive = () => { throw new Error('boom'); };
+  try {
+    assert.throws(() => switchAccount('home'), /home/i);
+  } finally {
+    vault.injectOAuthIntoLive = orig;
+  }
+  // live creds rolled back to work, marker still work, work slot uncontaminated
+  assert.strictEqual(fs.readFileSync(path.join(h, '.claude', '.credentials.json'), 'utf8'), '{"tok":"W"}');
+  assert.strictEqual(vault.getCurrent(), 'work');
+  assert.strictEqual(vault.readSlot('work').credentialsText, '{"tok":"W"}');
+});
